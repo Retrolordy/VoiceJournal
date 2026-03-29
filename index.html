@@ -716,21 +716,39 @@ function setupRecognition(){
 }
 
 // ── MediaRecorder ─────────────────────────────────────────────────────────────
+function getSupportedMimeType(){
+  const types = [
+    'audio/mp4',        // iOS Safari
+    'audio/aac',        // iOS fallback
+    'audio/webm;codecs=opus', // Chrome/Android
+    'audio/webm',       // Chrome fallback
+    'audio/ogg;codecs=opus',  // Firefox
+    ''                  // browser default
+  ];
+  for(const t of types){
+    if(!t || MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return '';
+}
+
 async function startAudioCapture(){
   try{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    audioChunks=[];
-    mediaRecorder=new MediaRecorder(stream);
-    mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) audioChunks.push(e.data); };
-    mediaRecorder.onstop=()=>{
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    audioChunks = [];
+    const mimeType = getSupportedMimeType();
+    const options  = mimeType ? {mimeType} : {};
+    mediaRecorder  = new MediaRecorder(stream, options);
+    mediaRecorder.ondataavailable = e=>{ if(e.data.size>0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = ()=>{
       stream.getTracks().forEach(t=>t.stop());
-      audioBlob=new Blob(audioChunks,{type:'audio/webm'});
+      const type = mediaRecorder.mimeType || mimeType || 'audio/webm';
+      audioBlob = new Blob(audioChunks, {type});
       if(audioURL) URL.revokeObjectURL(audioURL);
-      audioURL=URL.createObjectURL(audioBlob);
+      audioURL = URL.createObjectURL(audioBlob);
       initPlayback(audioURL);
     };
     mediaRecorder.start(250);
-  }catch(e){ console.warn('Audio capture:',e); }
+  }catch(e){ console.warn('Audio capture:', e); recStatus.textContent='⚠️ Mic unavailable'; }
 }
 function stopAudioCapture(){
   if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
@@ -755,25 +773,28 @@ function doStopRecording(){
 
 // ── Playback (current session recording) ─────────────────────────────────────
 function initPlayback(url){
-  // Pause any entry currently playing
+  // Stop any entry audio playing
   if(currentPlayingId){ sharedAudio.pause(); setEP(currentPlayingId,false); currentPlayingId=null; }
-  audioEl = new Audio(url);
-  playbackWrap.classList.add('visible'); setPlayState(false);
-  audioEl.ontimeupdate=()=>{
-    const pct=audioEl.duration?(audioEl.currentTime/audioEl.duration)*100:0;
-    progFill.style.width=pct+'%';
-    timeLbl.textContent=fmt(audioEl.currentTime)+' / '+fmt(audioEl.duration||0);
+  // Use sharedAudio for session playback too — iOS requires DOM audio element
+  sharedAudio.src = url;
+  audioEl = sharedAudio; // point audioEl at the shared element
+  playbackWrap.classList.add('visible');
+  setPlayState(false);
+  sharedAudio.ontimeupdate = ()=>{
+    const pct = sharedAudio.duration?(sharedAudio.currentTime/sharedAudio.duration)*100:0;
+    progFill.style.width = pct+'%';
+    timeLbl.textContent  = fmt(sharedAudio.currentTime)+' / '+fmt(sharedAudio.duration||0);
   };
-  audioEl.onended=()=>setPlayState(false);
+  sharedAudio.onended = ()=>{ setPlayState(false); };
 }
 playPauseBtn.addEventListener('click',()=>{
-  if(!audioEl) return;
-  audioEl.paused?(audioEl.play(),setPlayState(true)):(audioEl.pause(),setPlayState(false));
+  if(!sharedAudio.src) return;
+  sharedAudio.paused?(sharedAudio.play(),setPlayState(true)):(sharedAudio.pause(),setPlayState(false));
 });
 progTrack.addEventListener('click',e=>{
-  if(!audioEl?.duration) return;
+  if(!sharedAudio.duration) return;
   const r=progTrack.getBoundingClientRect();
-  audioEl.currentTime=((e.clientX-r.left)/r.width)*audioEl.duration;
+  sharedAudio.currentTime=((e.clientX-r.left)/r.width)*sharedAudio.duration;
 });
 function setPlayState(p){ playIcon.style.display=p?'none':'block'; pauseIcon.style.display=p?'block':'none'; }
 function fmt(s){ if(!s||isNaN(s))return'0:00'; return`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; }
@@ -1223,74 +1244,74 @@ window.submitReply=function(id){
 
 // ── Entry audio — iOS-compatible shared player ────────────────────────────────
 const sharedAudio = document.getElementById('shared-audio');
-let currentPlayingId = null;
+let currentPlayingId = null; // always stored as String
 
 async function toggleEntry(id){
-  const entry = entries.find(e=>String(e.id)===String(id));
+  const sid   = String(id);
+  const entry = entries.find(e=>String(e.id)===sid);
   if(!entry?.hasAudio && !entry?.audioData) return;
 
-  // Pause if already playing this entry
-  if(currentPlayingId===id && !sharedAudio.paused){
+  // Already playing this entry — pause it
+  if(currentPlayingId===sid && !sharedAudio.paused){
     sharedAudio.pause();
-    setEP(id, false);
+    setEP(sid, false);
     return;
   }
 
-  // Pause any other entry
-  if(currentPlayingId && currentPlayingId!==id){
+  // Pause whatever else is playing (session bar or other entry)
+  if(!sharedAudio.paused){
     sharedAudio.pause();
-    setEP(currentPlayingId, false);
+    if(currentPlayingId) setEP(currentPlayingId, false);
+    setPlayState(false);
   }
 
-  // Load audio source
-  if(currentPlayingId!==id){
+  // Load audio source if switching to a different entry
+  if(currentPlayingId !== sid){
     let src = null;
-    // Try IndexedDB first (new storage)
     if(db){
-      const blob = await loadAudioFromDB(id);
+      const blob = await loadAudioFromDB(sid);
       if(blob) src = URL.createObjectURL(blob);
     }
-    // Fall back to legacy base64 audioData if present
     if(!src && entry.audioData) src = entry.audioData;
+    if(!src){ console.warn('No audio found for entry', sid); return; }
 
-    if(!src){ console.warn('No audio found for entry', id); return; }
-    sharedAudio.src = src;
-    currentPlayingId = id;
+    sharedAudio.src      = src;
+    currentPlayingId     = sid;
+    // Clear the session playback bar since we're now playing an entry
+    playbackWrap.classList.remove('visible');
+    // Rewire ontimeupdate / onended for this entry
+    sharedAudio.ontimeupdate = ()=>{
+      const pct = sharedAudio.duration?(sharedAudio.currentTime/sharedAudio.duration)*100:0;
+      const f   = document.getElementById('epf-'+sid);
+      const t   = document.getElementById('ept-'+sid);
+      if(f) f.style.width = pct+'%';
+      if(t) t.textContent = fmt(sharedAudio.currentTime)+' / '+fmt(sharedAudio.duration||0);
+    };
+    sharedAudio.onended = ()=>{
+      setEP(sid, false);
+      const f = document.getElementById('epf-'+sid);
+      if(f) f.style.width='0%';
+      currentPlayingId = null;
+    };
   }
 
-  sharedAudio.ontimeupdate = ()=>{
-    const pct = sharedAudio.duration?(sharedAudio.currentTime/sharedAudio.duration)*100:0;
-    const f = document.getElementById('epf-'+id);
-    const t = document.getElementById('ept-'+id);
-    if(f) f.style.width = pct+'%';
-    if(t) t.textContent = fmt(sharedAudio.currentTime)+' / '+fmt(sharedAudio.duration||0);
-  };
-  sharedAudio.onended = ()=>{
-    setEP(id, false);
-    const f = document.getElementById('epf-'+id);
-    if(f) f.style.width='0%';
-    currentPlayingId = null;
-  };
+  const p = sharedAudio.play();
+  if(p !== undefined) p.then(()=>setEP(sid,true)).catch(err=>{ console.warn('Play blocked:',err); setEP(sid,false); });
+  else setEP(sid, true);
+}
 
-  const playPromise = sharedAudio.play();
-  if(playPromise !== undefined){
-    playPromise.then(()=> setEP(id, true)).catch(err=>{
-      console.warn('Playback blocked:', err);
-      setEP(id, false);
-    });
-  } else { setEP(id, true); }
-}
 function setEP(id,p){
-  const btn=entriesList.querySelector(`.ep-btn[data-id="${id}"]`);
+  const sid = String(id);
+  const btn = entriesList.querySelector(`.ep-btn[data-id="${sid}"]`);
   if(!btn) return;
-  btn.querySelector('.ep-play').style.display=p?'none':'block';
-  btn.querySelector('.ep-pause').style.display=p?'block':'none';
+  btn.querySelector('.ep-play').style.display  = p?'none':'block';
+  btn.querySelector('.ep-pause').style.display = p?'block':'none';
 }
+
 function seekEntry(id,ev,track){
-  const a=entryAudios[id];
-  if(!a?.duration) return;
-  const r=track.getBoundingClientRect();
-  a.currentTime=((ev.clientX-r.left)/r.width)*a.duration;
+  if(!sharedAudio.duration) return;
+  const r = track.getBoundingClientRect();
+  sharedAudio.currentTime = ((ev.clientX-r.left)/r.width)*sharedAudio.duration;
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
