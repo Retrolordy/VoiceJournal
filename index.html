@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Voice Journal">
+<meta name="theme-color" content="#0f0f13">
+<link rel="manifest" href="./manifest.json">
+<title>Voice Journal</title>
+<style>
+:root{
+  --bg:#0f0f13;--card:#1a1a24;--border:#2a2a38;--surface:#12121a;
+  --text:#e8e8f0;--muted:#6b6b80;--dimmer:#3a3a50;
+  --purple:#7c3aed;--purple-light:#a78bfa;--purple-dim:rgba(124,58,237,0.15);
+  --blue:#3b82f6;--red:#dc2626;
+  --green-dim:rgba(52,211,153,0.12);--green:#6ee7b7;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--bg);color:var(--text);min-height:100%;
+  display:flex;flex-direction:column;align-items:center;
+  padding:0 16px calc(32px + var(--safe-bottom));
+}
+
+/* ── Header ── */
+header{
+  width:100%;max-width:580px;
+  padding:calc(16px + var(--safe-top)) 0 16px;
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:8px;
+}
+.header-title h1{
+  font-size:clamp(1.3rem,5vw,1.7rem);font-weight:700;letter-spacing:-0.5px;
+  background:linear-gradient(135deg,var(--purple-light),var(--blue));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.header-title p{color:var(--muted);font-size:0.82rem;margin-top:2px}
+.header-stats{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.streak-badge{
+  display:flex;align-items:center;gap:5px;
+  background:rgba(251,146,60,0.12);border:1px solid rgba(251,146,60,0.25);
+  border-radius:20px;padding:4px 10px;font-size:0.78rem;color:#fb923c;font-weight:600;
+}
+.entry-count{font-size:0.72rem;color:var(--muted)}
+
+/* ── API Banner ── */
+#api-banner{
+  width:100%;max-width:580px;background:rgba(220,38,38,0.1);
+  border:1px solid rgba(220,38,38,0.3);border-radius:12px;
+  padding:14px 16px;margin-bottom:16px;display:none;
+}
+#api-banner.visible{display:block}
+#api-banner p{font-size:0.82rem;color:#fca5a5;line-height:1.5;margin-bottom:10px}
+#api-key-row{display:flex;gap:8px}
+#api-key-input{
+  flex:1;background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:8px 12px;color:var(--text);
+  font-size:0.82rem;font-family:monospace;outline:none;
+}
+#api-key-input:focus{border-color:var(--purple)}
+#api-key-save{
+  padding:8px 14px;border-radius:8px;border:none;
+  background:var(--purple);color:white;font-size:0.82rem;font-weight:600;cursor:pointer;
+}
+
+/* ── Cards ── */
+.card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:16px;padding:20px;
+  width:100%;max-width:580px;margin-bottom:16px;
+}
+.section-label{
+  font-size:0.68rem;text-transform:uppercase;letter-spacing:1.6px;
+  color:var(--muted);margin-bottom:12px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+
+/* ── Mood Chart ── */
+#chart-card{overflow:hidden}
+.chart-controls{display:flex;gap:6px;margin-bottom:14px}
+.chart-tab{
+  padding:5px 12px;border-radius:20px;border:1px solid var(--border);
+  background:none;color:var(--muted);font-size:0.75rem;cursor:pointer;
+  transition:all 0.15s;touch-action:manipulation;
+}
+.chart-tab.active{background:var(--purple-dim);border-color:var(--purple-light);color:var(--purple-light)}
+#mood-chart{width:100%;height:90px;display:block}
+.chart-legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:0.7rem;color:var(--muted)}
+.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* ── Mic ── */
+.recorder-area{display:flex;flex-direction:column;align-items:center;gap:12px}
+#mic-btn{
+  width:76px;height:76px;border-radius:50%;border:none;
+  background:linear-gradient(135deg,var(--purple),var(--blue));
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 24px rgba(124,58,237,0.45);
+  transition:transform 0.15s;touch-action:manipulation;
+}
+#mic-btn:active{transform:scale(0.94)}
+#mic-btn.recording{
+  background:linear-gradient(135deg,var(--red),#f97316);
+  box-shadow:0 4px 24px rgba(220,38,38,0.5);
+  animation:pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+#mic-btn svg{width:30px;height:30px;fill:white}
+#rec-status{font-size:0.83rem;color:var(--muted);min-height:18px}
+#rec-status.active{color:#f87171}
+
+/* ── Playback ── */
+#playback-wrap{
+  width:100%;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:10px 14px;
+  display:none;align-items:center;gap:10px;margin-top:12px;
+}
+#playback-wrap.visible{display:flex}
+#play-pause-btn{
+  width:32px;height:32px;border-radius:50%;border:none;
+  background:linear-gradient(135deg,var(--purple),var(--blue));
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;touch-action:manipulation;
+}
+#play-pause-btn svg{width:13px;height:13px;fill:white}
+.prog-track{flex:1;height:4px;background:var(--border);border-radius:2px;cursor:pointer}
+#prog-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--purple),var(--blue));width:0%;transition:width 0.1s linear}
+#time-lbl{font-size:0.7rem;color:var(--muted);white-space:nowrap}
+
+/* ── Mood ── */
+.mood-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media(min-width:400px){.mood-grid{grid-template-columns:repeat(6,1fr)}}
+.mood-btn{
+  padding:10px 4px;border-radius:12px;border:1.5px solid var(--border);
+  background:var(--surface);cursor:pointer;text-align:center;
+  transition:border-color 0.15s,background 0.15s;font-size:1.3rem;line-height:1;
+  touch-action:manipulation;
+}
+.mood-btn span{display:block;font-size:0.6rem;color:var(--muted);margin-top:3px}
+.mood-btn.selected{border-color:var(--purple-light);background:var(--purple-dim)}
+.mood-btn.selected span{color:var(--purple-light)}
+
+/* ── Transcript ── */
+#transcript-box{
+  width:100%;min-height:88px;background:var(--surface);
+  border:1px solid var(--border);border-radius:10px;
+  padding:12px 14px;color:var(--text);font-size:0.92rem;
+  line-height:1.6;resize:vertical;font-family:inherit;
+  outline:none;transition:border-color 0.15s;
+}
+#transcript-box:focus{border-color:var(--purple)}
+#transcript-box::placeholder{color:var(--dimmer)}
+#char-hint{font-size:0.7rem;color:var(--dimmer);text-align:right;margin-top:4px}
+
+/* ── Toggle ── */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.toggle{position:relative;width:40px;height:22px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;border-radius:22px;background:var(--border);cursor:pointer;transition:background 0.2s}
+.toggle-slider::before{
+  content:'';position:absolute;width:16px;height:16px;border-radius:50%;
+  background:var(--muted);left:3px;top:3px;transition:transform 0.2s,background 0.2s;
+}
+.toggle input:checked+.toggle-slider{background:rgba(124,58,237,0.4)}
+.toggle input:checked+.toggle-slider::before{transform:translateX(18px);background:var(--purple-light)}
+
+/* ── Insight ── */
+#summary-section{transition:opacity 0.2s}
+#summary-section.hidden{opacity:0.3;pointer-events:none}
+#summary-area{
+  background:rgba(124,58,237,0.07);border:1px solid rgba(124,58,237,0.22);
+  border-radius:10px;padding:14px;font-size:0.87rem;
+  line-height:1.7;color:var(--purple-light);min-height:58px;
+}
+#summary-area.empty{color:var(--dimmer);font-style:italic}
+#summary-area.error{color:#f87171;font-style:italic}
+.insight-block{margin-bottom:12px}
+.insight-block:last-child{margin-bottom:0}
+.insight-tag{
+  display:inline-block;font-size:0.62rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:1px;
+  padding:2px 7px;border-radius:4px;margin-bottom:5px;
+}
+.insight-tag.empathy{background:rgba(167,139,250,0.15);color:#c4b5fd}
+.insight-tag.observation{background:rgba(96,165,250,0.15);color:#93c5fd}
+.insight-tag.nudge{background:rgba(52,211,153,0.15);color:#6ee7b7}
+.insight-text{font-size:0.86rem;line-height:1.65;color:#d4d0e8}
+
+/* ── Reflection reply ── */
+.reflection-reply{margin-top:10px}
+.reply-toggle-btn{
+  display:flex;align-items:center;gap:6px;background:none;border:none;
+  cursor:pointer;font-size:0.75rem;color:var(--green);padding:0;touch-action:manipulation;
+}
+.reply-toggle-btn svg{width:13px;height:13px;fill:var(--green);transition:transform 0.2s}
+.reply-toggle-btn.open svg{transform:rotate(90deg)}
+.reply-box{margin-top:8px;display:none;flex-direction:column;gap:8px}
+.reply-box.open{display:flex}
+.reply-textarea{
+  width:100%;min-height:70px;background:var(--green-dim);
+  border:1px solid rgba(52,211,153,0.25);border-radius:8px;
+  padding:10px 12px;color:var(--text);font-size:0.85rem;
+  line-height:1.55;font-family:inherit;resize:vertical;outline:none;
+}
+.reply-textarea:focus{border-color:rgba(52,211,153,0.5)}
+.reply-textarea::placeholder{color:rgba(110,231,183,0.3)}
+.reply-save-btn{
+  align-self:flex-end;padding:7px 16px;border-radius:8px;border:none;
+  background:rgba(52,211,153,0.2);color:var(--green);
+  font-size:0.8rem;font-weight:600;cursor:pointer;touch-action:manipulation;
+}
+.reply-saved-text{
+  font-size:0.82rem;color:rgba(110,231,183,0.7);
+  background:var(--green-dim);border:1px solid rgba(52,211,153,0.2);
+  border-radius:8px;padding:10px 12px;line-height:1.55;font-style:italic;margin-top:8px;
+}
+
+/* ── Buttons ── */
+.action-row{display:flex;gap:10px}
+.btn{
+  flex:1;padding:13px;border-radius:12px;border:none;
+  font-size:0.9rem;font-weight:600;cursor:pointer;
+  transition:opacity 0.15s,transform 0.1s;touch-action:manipulation;
+}
+.btn:active{transform:scale(0.97)}
+.btn-primary{background:linear-gradient(135deg,var(--purple),var(--blue));color:white}
+.btn-secondary{background:var(--border);color:#a0a0b8}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+#save-status{font-size:0.75rem;text-align:center;min-height:18px;color:var(--muted);margin-top:8px}
+#save-status.success{color:#6ee7b7}
+#save-status.fail{color:#f87171}
+
+/* ── Search & filters ── */
+#search-wrap{
+  display:flex;gap:8px;align-items:center;margin-bottom:14px;
+}
+#search-input{
+  flex:1;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:9px 14px 9px 36px;
+  color:var(--text);font-size:0.88rem;outline:none;font-family:inherit;
+}
+#search-input:focus{border-color:var(--purple)}
+#search-input::placeholder{color:var(--dimmer)}
+.search-icon-wrap{position:relative;flex:1}
+.search-icon{
+  position:absolute;left:11px;top:50%;transform:translateY(-50%);
+  width:15px;height:15px;fill:none;stroke:var(--muted);stroke-width:2;pointer-events:none;
+}
+.mood-filter-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.mood-filter-btn{
+  padding:4px 10px;border-radius:20px;border:1px solid var(--border);
+  background:none;color:var(--muted);font-size:0.75rem;cursor:pointer;
+  transition:all 0.15s;touch-action:manipulation;
+}
+.mood-filter-btn.active{background:var(--purple-dim);border-color:var(--purple-light);color:var(--purple-light)}
+
+/* ── Export button ── */
+.entries-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.export-btn{
+  display:flex;align-items:center;gap:5px;
+  padding:6px 12px;border-radius:8px;border:1px solid var(--border);
+  background:none;color:var(--muted);font-size:0.75rem;cursor:pointer;
+  transition:all 0.15s;touch-action:manipulation;
+}
+.export-btn:hover{border-color:var(--purple-light);color:var(--purple-light)}
+.export-btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2}
+
+/* ── Past entries ── */
+.entry{border-bottom:1px solid #1e1e2a;padding:14px 0;transition:opacity 0.3s}
+.entry:last-child{border-bottom:none}
+.entry.deleting{opacity:0}
+.entry-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px}
+.entry-meta{font-size:0.72rem;color:var(--muted);line-height:1.4}
+.entry-mood{font-size:0.85rem;color:var(--muted);flex-shrink:0}
+.entry-text{font-size:0.86rem;color:#a0a0b8;line-height:1.55}
+.entry-insight{margin-top:10px}
+.entry-header-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.delete-btn{
+  background:none;border:none;cursor:pointer;
+  padding:3px;border-radius:5px;opacity:0.3;
+  transition:opacity 0.15s,background 0.15s;touch-action:manipulation;
+  display:flex;align-items:center;
+}
+.delete-btn:hover{opacity:1;background:rgba(220,38,38,0.12)}
+.delete-btn svg{width:13px;height:13px;fill:#f87171}
+.delete-confirm{
+  display:none;align-items:center;gap:8px;flex-wrap:wrap;
+  margin-top:10px;padding:9px 12px;
+  background:rgba(220,38,38,0.07);border:1px solid rgba(220,38,38,0.22);
+  border-radius:8px;font-size:0.79rem;color:#fca5a5;
+}
+.delete-confirm.visible{display:flex}
+.delete-confirm span{flex:1;min-width:140px}
+.confirm-yes{
+  padding:5px 12px;border-radius:6px;border:none;
+  background:rgba(220,38,38,0.65);color:white;
+  font-size:0.78rem;font-weight:600;cursor:pointer;touch-action:manipulation;
+}
+.confirm-no{
+  padding:5px 10px;border-radius:6px;border:none;
+  background:var(--border);color:var(--muted);
+  font-size:0.78rem;cursor:pointer;touch-action:manipulation;
+}
+.search-highlight{background:rgba(167,139,250,0.25);border-radius:2px;color:var(--text)}
+
+/* ── Mini player ── */
+.entry-player{margin-top:10px;display:flex;align-items:center;gap:8px}
+.ep-btn{
+  width:28px;height:28px;border-radius:50%;border:none;
+  background:var(--border);cursor:pointer;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;touch-action:manipulation;
+}
+.ep-btn svg{width:10px;height:10px;fill:var(--purple-light)}
+.ep-track{flex:1;height:3px;background:var(--border);border-radius:2px;cursor:pointer}
+.ep-fill{height:100%;border-radius:2px;background:var(--purple);width:0%}
+.ep-time{font-size:0.68rem;color:var(--muted);white-space:nowrap}
+
+.empty-state{text-align:center;color:var(--dimmer);font-size:0.85rem;padding:24px 0}
+.loading-dots::after{content:'';animation:ldots 1.2s steps(4,end) infinite}
+@keyframes ldots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+
+/* ── Install banner ── */
+#install-banner{
+  width:100%;max-width:580px;background:rgba(124,58,237,0.1);
+  border:1px solid rgba(124,58,237,0.25);border-radius:12px;
+  padding:12px 16px;margin-bottom:16px;display:none;
+  align-items:center;gap:12px;
+}
+#install-banner.visible{display:flex}
+#install-banner p{font-size:0.82rem;color:var(--purple-light);flex:1;line-height:1.4}
+#install-btn{
+  padding:7px 14px;border-radius:8px;border:none;
+  background:var(--purple);color:white;font-size:0.8rem;font-weight:600;
+  cursor:pointer;white-space:nowrap;touch-action:manipulation;
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="header-title">
+    <h1>🎙️ Voice Journal</h1>
+    <p>Record. Reflect. Understand yourself.</p>
+  </div>
+  <div class="header-stats">
+    <div class="streak-badge" id="streak-badge">🔥 0 day streak</div>
+    <div class="entry-count" id="entry-count">0 entries</div>
+  </div>
+</header>
+
+<!-- Install banner (PWA) -->
+<div id="install-banner">
+  <p>Add to your home screen for the full app experience.</p>
+  <button id="install-btn">Install</button>
+</div>
+
+<!-- API Key Banner -->
+<div id="api-banner">
+  <p>Paste your Anthropic API key to enable AI insights. Stored only in your browser — sent directly to Anthropic, nowhere else.</p>
+  <div id="api-key-row">
+    <input type="password" id="api-key-input" placeholder="sk-ant-…">
+    <button id="api-key-save">Save</button>
+  </div>
+</div>
+
+<!-- Mood Chart -->
+<div class="card" id="chart-card">
+  <div class="section-label">
+    Mood Trends
+    <div class="chart-controls">
+      <button class="chart-tab active" data-days="7">7d</button>
+      <button class="chart-tab" data-days="14">14d</button>
+      <button class="chart-tab" data-days="30">30d</button>
+    </div>
+  </div>
+  <canvas id="mood-chart"></canvas>
+  <div class="chart-legend" id="chart-legend"></div>
+</div>
+
+<!-- New Entry -->
+<div class="card">
+  <div class="section-label">New Entry</div>
+
+  <div class="recorder-area">
+    <button id="mic-btn" title="Tap to record">
+      <svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm6.5 9a1 1 0 0 1 1 1 7.5 7.5 0 0 1-15 0 1 1 0 1 1 2 0 5.5 5.5 0 0 0 11 0 1 1 0 0 1 1-1zM11 20.9V23a1 1 0 1 0 2 0v-2.1a9.5 9.5 0 0 1-2 0z"/></svg>
+    </button>
+    <div id="rec-status">Tap to start recording</div>
+  </div>
+
+  <div id="playback-wrap">
+    <button id="play-pause-btn">
+      <svg id="play-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      <svg id="pause-icon" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+    </button>
+    <div class="prog-track" id="prog-track"><div id="prog-fill"></div></div>
+    <span id="time-lbl">0:00</span>
+  </div>
+
+  <div class="section-label" style="margin-top:20px">How are you feeling?</div>
+  <div class="mood-grid" id="mood-row">
+    <button class="mood-btn" data-mood="Happy">😊<span>Happy</span></button>
+    <button class="mood-btn" data-mood="Calm">😌<span>Calm</span></button>
+    <button class="mood-btn" data-mood="Anxious">😰<span>Anxious</span></button>
+    <button class="mood-btn" data-mood="Sad">😔<span>Sad</span></button>
+    <button class="mood-btn" data-mood="Energized">⚡<span>Energized</span></button>
+    <button class="mood-btn" data-mood="Tired">😴<span>Tired</span></button>
+  </div>
+
+  <div class="section-label" style="margin-top:20px">Transcript</div>
+  <textarea id="transcript-box" placeholder="Your spoken words will appear here, or type directly…" rows="4"></textarea>
+  <div id="char-hint"></div>
+
+  <div class="toggle-row" style="margin-top:18px">
+    <div class="section-label" style="margin-bottom:0">AI Insight</div>
+    <label class="toggle">
+      <input type="checkbox" id="insight-toggle" checked>
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+  <div id="summary-section">
+    <div id="summary-area" class="empty">Your AI reflection will appear here after saving.</div>
+  </div>
+
+  <div class="action-row" style="margin-top:16px">
+    <button class="btn btn-secondary" id="clear-btn">Clear</button>
+    <button class="btn btn-primary" id="save-btn">Save Entry ✦</button>
+  </div>
+  <div id="save-status"></div>
+</div>
+
+<!-- Past Entries -->
+<div class="card">
+  <div class="entries-toolbar">
+    <div class="section-label" style="margin-bottom:0">Past Entries</div>
+    <button class="export-btn" id="export-btn">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export
+    </button>
+  </div>
+
+  <div id="search-wrap">
+    <div class="search-icon-wrap">
+      <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="search-input" placeholder="Search entries…">
+    </div>
+  </div>
+
+  <div class="mood-filter-row" id="mood-filters">
+    <button class="mood-filter-btn active" data-mood="">All</button>
+    <button class="mood-filter-btn" data-mood="Happy">😊 Happy</button>
+    <button class="mood-filter-btn" data-mood="Calm">😌 Calm</button>
+    <button class="mood-filter-btn" data-mood="Anxious">😰 Anxious</button>
+    <button class="mood-filter-btn" data-mood="Sad">😔 Sad</button>
+    <button class="mood-filter-btn" data-mood="Energized">⚡ Energized</button>
+    <button class="mood-filter-btn" data-mood="Tired">😴 Tired</button>
+  </div>
+
+  <div id="entries-list"><div class="empty-state">No entries yet. Record your first thought 🌱</div></div>
+</div>
+
+<script>
+// ── PWA ───────────────────────────────────────────────────────────────────────
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
+let deferredInstall = null;
+window.addEventListener('beforeinstallprompt', e=>{
+  e.preventDefault();
+  deferredInstall = e;
+  document.getElementById('install-banner').classList.add('visible');
+});
+document.getElementById('install-btn').addEventListener('click', async()=>{
+  if(!deferredInstall) return;
+  deferredInstall.prompt();
+  const {outcome} = await deferredInstall.userChoice;
+  if(outcome==='accepted') document.getElementById('install-banner').classList.remove('visible');
+  deferredInstall=null;
+});
+
+// ── API Key ───────────────────────────────────────────────────────────────────
+const apiBanner   = document.getElementById('api-banner');
+const apiKeyInput = document.getElementById('api-key-input');
+function getApiKey(){ return localStorage.getItem('vj_api_key')||''; }
+function checkApiBanner(){ apiBanner.classList.toggle('visible',!getApiKey()); }
+document.getElementById('api-key-save').addEventListener('click',()=>{
+  const k=apiKeyInput.value.trim();
+  if(!k.startsWith('sk-')){ alert('Key should start with sk-ant-…'); return; }
+  localStorage.setItem('vj_api_key',k);
+  apiKeyInput.value='';
+  checkApiBanner();
+});
+checkApiBanner();
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let selectedMood  = null;
+let entries       = JSON.parse(localStorage.getItem('vj_entries')||'[]');
+let isRecording   = false;
+let recognition   = null;
+let mediaRecorder = null;
+let audioChunks   = [];
+let audioBlob     = null;
+let audioURL      = null;
+let audioEl       = null;
+let entryAudios   = {};
+let searchQuery   = '';
+let filterMood    = '';
+let chartDays     = 7;
+
+// ── DOM ───────────────────────────────────────────────────────────────────────
+const micBtn        = document.getElementById('mic-btn');
+const recStatus     = document.getElementById('rec-status');
+const transcriptBox = document.getElementById('transcript-box');
+const summaryArea   = document.getElementById('summary-area');
+const summarySection= document.getElementById('summary-section');
+const insightToggle = document.getElementById('insight-toggle');
+const saveBtn       = document.getElementById('save-btn');
+const saveStatus    = document.getElementById('save-status');
+const clearBtn      = document.getElementById('clear-btn');
+const entriesList   = document.getElementById('entries-list');
+const charHint      = document.getElementById('char-hint');
+const playbackWrap  = document.getElementById('playback-wrap');
+const playPauseBtn  = document.getElementById('play-pause-btn');
+const playIcon      = document.getElementById('play-icon');
+const pauseIcon     = document.getElementById('pause-icon');
+const progTrack     = document.getElementById('prog-track');
+const progFill      = document.getElementById('prog-fill');
+const timeLbl       = document.getElementById('time-lbl');
+
+// ── Toggle ────────────────────────────────────────────────────────────────────
+insightToggle.addEventListener('change',()=>
+  summarySection.classList.toggle('hidden',!insightToggle.checked));
+
+// ── Mood selector ─────────────────────────────────────────────────────────────
+document.getElementById('mood-row').addEventListener('click',e=>{
+  const btn=e.target.closest('.mood-btn');
+  if(!btn) return;
+  document.querySelectorAll('.mood-btn').forEach(b=>b.classList.remove('selected'));
+  btn.classList.add('selected');
+  selectedMood=btn.dataset.mood;
+});
+
+// ── Speech Recognition ────────────────────────────────────────────────────────
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR){ recStatus.textContent='⚠️ Try Chrome or Edge for voice recording'; micBtn.disabled=true; }
+
+function setupRecognition(){
+  recognition=new SR();
+  recognition.continuous=true; recognition.interimResults=true; recognition.lang='en-US';
+  let final=transcriptBox.value.trim();
+  recognition.onstart=()=>{ recStatus.textContent='Recording… tap to stop'; recStatus.classList.add('active'); };
+  recognition.onresult=e=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal) final+=(final?' ':'')+e.results[i][0].transcript.trim();
+      else interim+=e.results[i][0].transcript;
+    }
+    transcriptBox.value=final+(interim?' '+interim:'');
+    updateCharHint();
+  };
+  recognition.onerror=e=>{
+    recStatus.textContent=e.error==='not-allowed'?'⚠️ Mic access denied':`Error: ${e.error}`;
+    doStopRecording();
+  };
+  recognition.onend=()=>{
+    if(isRecording) recognition.start();
+    else{ recStatus.textContent='Tap to start recording'; recStatus.classList.remove('active'); }
+  };
+  return recognition;
+}
+
+// ── MediaRecorder ─────────────────────────────────────────────────────────────
+async function startAudioCapture(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    audioChunks=[];
+    mediaRecorder=new MediaRecorder(stream);
+    mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) audioChunks.push(e.data); };
+    mediaRecorder.onstop=()=>{
+      stream.getTracks().forEach(t=>t.stop());
+      audioBlob=new Blob(audioChunks,{type:'audio/webm'});
+      if(audioURL) URL.revokeObjectURL(audioURL);
+      audioURL=URL.createObjectURL(audioBlob);
+      initPlayback(audioURL);
+    };
+    mediaRecorder.start(250);
+  }catch(e){ console.warn('Audio capture:',e); }
+}
+function stopAudioCapture(){
+  if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
+}
+
+// ── Mic ───────────────────────────────────────────────────────────────────────
+micBtn.addEventListener('click',async()=>{
+  if(!SR) return;
+  if(!isRecording){
+    isRecording=true; micBtn.classList.add('recording');
+    playbackWrap.classList.remove('visible');
+    await startAudioCapture(); setupRecognition().start();
+  } else { doStopRecording(); stopAudioCapture(); }
+});
+function doStopRecording(){
+  isRecording=false; micBtn.classList.remove('recording');
+  if(recognition){
+    recognition.onend=()=>{ recStatus.textContent='Tap to start recording'; recStatus.classList.remove('active'); };
+    recognition.stop();
+  }
+}
+
+// ── Playback ──────────────────────────────────────────────────────────────────
+function initPlayback(url){
+  audioEl=new Audio(url); playbackWrap.classList.add('visible'); setPlayState(false);
+  audioEl.ontimeupdate=()=>{
+    const pct=audioEl.duration?(audioEl.currentTime/audioEl.duration)*100:0;
+    progFill.style.width=pct+'%';
+    timeLbl.textContent=fmt(audioEl.currentTime)+' / '+fmt(audioEl.duration||0);
+  };
+  audioEl.onended=()=>setPlayState(false);
+}
+playPauseBtn.addEventListener('click',()=>{
+  if(!audioEl) return;
+  audioEl.paused?(audioEl.play(),setPlayState(true)):(audioEl.pause(),setPlayState(false));
+});
+progTrack.addEventListener('click',e=>{
+  if(!audioEl?.duration) return;
+  const r=progTrack.getBoundingClientRect();
+  audioEl.currentTime=((e.clientX-r.left)/r.width)*audioEl.duration;
+});
+function setPlayState(p){ playIcon.style.display=p?'none':'block'; pauseIcon.style.display=p?'block':'none'; }
+function fmt(s){ if(!s||isNaN(s))return'0:00'; return`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; }
+
+// ── Char hint ─────────────────────────────────────────────────────────────────
+transcriptBox.addEventListener('input',updateCharHint);
+function updateCharHint(){ charHint.textContent=transcriptBox.value.length?`${transcriptBox.value.length} characters`:''; }
+
+// ── Blob → base64 ─────────────────────────────────────────────────────────────
+function blobToDataURL(blob){
+  return new Promise(res=>{ const r=new FileReader(); r.onloadend=()=>res(r.result); r.readAsDataURL(blob); });
+}
+
+// ── AI Insight ────────────────────────────────────────────────────────────────
+async function generateInsight(text,mood){
+  const apiKey=getApiKey();
+  if(!apiKey) return{error:'Add your Anthropic API key in the banner above.'};
+  const prompt=`You are a compassionate journaling coach. Analyse this journal entry and return ONLY a valid JSON object with exactly three keys: "empathy", "observation", "nudge".
+
+Rules:
+- "empathy": 1-2 warm sentences acknowledging what the person is feeling. Validate without judgment.
+- "observation": 1-2 sentences identifying a specific pattern, theme, or tension. Be concrete, not generic.
+- "nudge": A single open-ended reflective question grounded in CBT, positive psychology, or mindfulness.
+
+Mood: ${mood||'not specified'}
+Entry: """${text}"""
+
+Return ONLY the raw JSON. No markdown, no extra text.`;
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key':apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:400,messages:[{role:'user',content:prompt}]})
+    });
+    if(!resp.ok){
+      const body=await resp.text(); console.error('API:',resp.status,body);
+      if(resp.status===401) return{error:'Invalid API key.'};
+      return{error:`API error ${resp.status}.`};
+    }
+    const data=await resp.json();
+    const raw=data?.content?.find(b=>b.type==='text')?.text?.trim();
+    if(!raw) return{error:'Empty response.'};
+    const clean=raw.replace(/^```json\s*/,'').replace(/```\s*$/,'').trim();
+    const parsed=JSON.parse(clean);
+    if(!parsed.empathy||!parsed.observation||!parsed.nudge) throw new Error('Missing fields');
+    return parsed;
+  }catch(e){ console.error('Insight:',e); return{error:'Could not parse AI response.'}; }
+}
+
+function renderInsightInBox(result){
+  if(result.error){ summaryArea.className='error'; summaryArea.textContent=result.error; return; }
+  summaryArea.className='';
+  summaryArea.innerHTML=`
+    <div class="insight-block">
+      <span class="insight-tag empathy">💜 Empathy</span>
+      <div class="insight-text">${result.empathy}</div>
+    </div>
+    <div class="insight-block">
+      <span class="insight-tag observation">💡 Observation</span>
+      <div class="insight-text">${result.observation}</div>
+    </div>
+    <div class="insight-block">
+      <span class="insight-tag nudge">🌱 Reflection</span>
+      <div class="insight-text">${result.nudge}</div>
+      <div class="reflection-reply" id="live-reply-area">
+        <button class="reply-toggle-btn" id="live-reply-toggle">
+          <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+          Write your reflection
+        </button>
+        <div class="reply-box" id="live-reply-box">
+          <textarea class="reply-textarea" id="live-reply-text" placeholder="What comes up for you when you sit with this question?"></textarea>
+          <button class="reply-save-btn" id="live-reply-save">Save Reflection</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('live-reply-toggle').addEventListener('click',function(){
+    this.classList.toggle('open');
+    document.getElementById('live-reply-box').classList.toggle('open');
+  });
+}
+
+// ── Save ──────────────────────────────────────────────────────────────────────
+saveBtn.addEventListener('click',async()=>{
+  const text=transcriptBox.value.trim();
+  if(!text){ alert('Add some text first!'); return; }
+  const wantInsight=insightToggle.checked;
+  saveBtn.disabled=true;
+  saveBtn.textContent=wantInsight?'Analyzing':'Saving…';
+  if(wantInsight) saveBtn.classList.add('loading-dots');
+  saveStatus.textContent=''; saveStatus.className='';
+  if(wantInsight){ summaryArea.className='empty'; summaryArea.textContent='Generating your reflection…'; }
+
+  // Step 1: encode audio immediately (never blocks save)
+  const audioPromise = audioBlob ? blobToDataURL(audioBlob) : Promise.resolve(null);
+
+  // Step 2: run AI insight — failure here must NOT prevent saving
+  let insightResult = null;
+  if(wantInsight){
+    try{
+      insightResult = await generateInsight(text, selectedMood);
+      renderInsightInBox(insightResult);
+    }catch(insightErr){
+      console.error('Insight failed (non-fatal):', insightErr);
+      summaryArea.className='error';
+      summaryArea.textContent='AI insight unavailable — entry will still be saved.';
+      insightResult = null;
+    }
+  }
+
+  // Step 3: await audio (runs in parallel, should be ready by now)
+  let audioData = null;
+  try{ audioData = await audioPromise; }
+  catch(audioErr){ console.warn('Audio encode failed (non-fatal):', audioErr); }
+
+  // Step 4: ALWAYS save the entry
+  try{
+    const entry={
+      id:Date.now(), date:new Date().toLocaleString(),
+      mood:selectedMood, text,
+      insight:insightResult&&!insightResult.error?insightResult:null,
+      audioData, reply:null
+    };
+    entries.unshift(entry);
+    localStorage.setItem('vj_entries', JSON.stringify(entries));
+    renderEntries(); updateStats(); drawChart();
+
+    // Wire live reflection reply to this entry
+    const liveReplySave=document.getElementById('live-reply-save');
+    if(liveReplySave){
+      liveReplySave.addEventListener('click',()=>{
+        const t=document.getElementById('live-reply-text')?.value.trim();
+        if(!t) return;
+        saveReply(entry.id,t);
+        const area=document.getElementById('live-reply-area');
+        if(area) area.innerHTML=`<div class="reply-saved-text">✍️ ${t}</div>`;
+      });
+    }
+
+    saveStatus.textContent='✓ Entry saved';
+    saveStatus.className='success';
+    setTimeout(()=>{ saveStatus.textContent=''; saveStatus.className=''; },3000);
+  }catch(saveErr){
+    console.error('Critical save error:', saveErr);
+    saveStatus.textContent='⚠️ Could not save — storage may be full. Try clearing old entries.';
+    saveStatus.className='fail';
+  }finally{
+    saveBtn.disabled=false; saveBtn.textContent='Save Entry ✦'; saveBtn.classList.remove('loading-dots');
+  }
+});
+
+function saveReply(entryId,replyText){
+  const idx=entries.findIndex(e=>e.id===entryId);
+  if(idx===-1) return;
+  entries[idx].reply=replyText;
+  localStorage.setItem('vj_entries',JSON.stringify(entries));
+  renderEntries();
+}
+
+// ── Clear ─────────────────────────────────────────────────────────────────────
+clearBtn.addEventListener('click',()=>{
+  transcriptBox.value='';
+  summaryArea.className='empty'; summaryArea.textContent='Your AI reflection will appear here after saving.';
+  document.querySelectorAll('.mood-btn').forEach(b=>b.classList.remove('selected'));
+  selectedMood=null; charHint.textContent='';
+  audioBlob=null; audioURL=null; audioEl=null;
+  playbackWrap.classList.remove('visible');
+  progFill.style.width='0%'; timeLbl.textContent='0:00';
+  saveStatus.textContent='';
+});
+
+// ── Search & Filter ───────────────────────────────────────────────────────────
+document.getElementById('search-input').addEventListener('input',e=>{
+  searchQuery=e.target.value.toLowerCase();
+  renderEntries();
+});
+
+document.getElementById('mood-filters').addEventListener('click',e=>{
+  const btn=e.target.closest('.mood-filter-btn');
+  if(!btn) return;
+  document.querySelectorAll('.mood-filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  filterMood=btn.dataset.mood;
+  renderEntries();
+});
+
+function highlightText(text,query){
+  if(!query) return text;
+  const escaped=query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  return text.replace(new RegExp(`(${escaped})`,'gi'),'<mark class="search-highlight">$1</mark>');
+}
+
+function getFilteredEntries(){
+  return entries.filter(e=>{
+    const matchesMood=!filterMood||e.mood===filterMood;
+    const matchesSearch=!searchQuery||
+      e.text.toLowerCase().includes(searchQuery)||
+      (e.insight?.empathy||'').toLowerCase().includes(searchQuery)||
+      (e.insight?.observation||'').toLowerCase().includes(searchQuery)||
+      (e.reply||'').toLowerCase().includes(searchQuery);
+    return matchesMood&&matchesSearch;
+  });
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+document.getElementById('export-btn').addEventListener('click',()=>{
+  const toExport=getFilteredEntries();
+  if(!toExport.length){ alert('No entries to export.'); return; }
+
+  const lines=toExport.map(e=>{
+    const mood=e.mood?` [${e.mood}]`:'';
+    let out=`── ${e.date}${mood} ──\n${e.text}`;
+    if(e.insight){
+      out+=`\n\n💜 Empathy: ${e.insight.empathy}`;
+      out+=`\n💡 Observation: ${e.insight.observation}`;
+      out+=`\n🌱 Reflection: ${e.insight.nudge}`;
+    }
+    if(e.reply) out+=`\n✍️ My reflection: ${e.reply}`;
+    return out;
+  }).join('\n\n'+'═'.repeat(40)+'\n\n');
+
+  const header=`VOICE JOURNAL EXPORT\nExported: ${new Date().toLocaleString()}\nEntries: ${toExport.length}\n\n${'═'.repeat(40)}\n\n`;
+  const blob=new Blob([header+lines],{type:'text/plain'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`voice-journal-${new Date().toISOString().slice(0,10)}.txt`;
+  a.click(); URL.revokeObjectURL(url);
+});
+
+// ── Stats & Streak ────────────────────────────────────────────────────────────
+function updateStats(){
+  const streak=calcStreak();
+  document.getElementById('streak-badge').textContent=`🔥 ${streak} day streak`;
+  document.getElementById('entry-count').textContent=`${entries.length} ${entries.length===1?'entry':'entries'}`;
+}
+
+function calcStreak(){
+  if(!entries.length) return 0;
+  const days=new Set(entries.map(e=>new Date(e.date).toDateString()));
+  let streak=0;
+  const today=new Date();
+  for(let i=0;i<365;i++){
+    const d=new Date(today); d.setDate(d.getDate()-i);
+    if(days.has(d.toDateString())) streak++;
+    else if(i>0) break;
+  }
+  return streak;
+}
+
+// ── Mood Chart ────────────────────────────────────────────────────────────────
+const MOOD_SCORE={Happy:5,Energized:4,Calm:3,Tired:2,Anxious:1,Sad:0};
+const MOOD_COLOR={Happy:'#fbbf24',Energized:'#fb923c',Calm:'#60a5fa',Tired:'#94a3b8',Anxious:'#f472b6',Sad:'#818cf8'};
+const EMOJI={Happy:'😊',Calm:'😌',Anxious:'😰',Sad:'😔',Energized:'⚡',Tired:'😴'};
+
+document.querySelectorAll('.chart-tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.chart-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    chartDays=parseInt(tab.dataset.days);
+    drawChart();
+  });
+});
+
+function drawChart(){
+  const canvas=document.getElementById('mood-chart');
+  const ctx=canvas.getContext('2d');
+  const dpr=window.devicePixelRatio||1;
+  const W=canvas.offsetWidth; const H=90;
+  canvas.width=W*dpr; canvas.height=H*dpr;
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,W,H);
+
+  // Build day buckets
+  const buckets=[];
+  const now=new Date();
+  for(let i=chartDays-1;i>=0;i--){
+    const d=new Date(now); d.setDate(d.getDate()-i);
+    const key=d.toDateString();
+    const dayEntries=entries.filter(e=>new Date(e.date).toDateString()===key&&e.mood&&MOOD_SCORE[e.mood]!==undefined);
+    const avg=dayEntries.length?dayEntries.reduce((s,e)=>s+MOOD_SCORE[e.mood],0)/dayEntries.length:null;
+    buckets.push({label:d.toLocaleDateString('en',{weekday:'short',day:'numeric'}).replace(',',''),avg,moods:dayEntries.map(e=>e.mood)});
+  }
+
+  const hasData=buckets.some(b=>b.avg!==null);
+  if(!hasData){
+    ctx.fillStyle='#3a3a50';
+    ctx.font='13px -apple-system,sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('Add entries with moods to see your trend',W/2,H/2);
+    document.getElementById('chart-legend').innerHTML='';
+    return;
+  }
+
+  const padL=8,padR=8,padT=10,padB=22;
+  const gW=W-padL-padR; const gH=H-padT-padB;
+  const stepX=gW/(chartDays-1||1);
+
+  // Grid lines
+  ctx.strokeStyle='#2a2a38'; ctx.lineWidth=1;
+  for(let i=0;i<=5;i++){
+    const y=padT+gH-(i/5)*gH;
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
+  }
+
+  // Line
+  ctx.beginPath(); ctx.lineWidth=2.5;
+  const grad=ctx.createLinearGradient(0,0,W,0);
+  grad.addColorStop(0,'#7c3aed'); grad.addColorStop(1,'#3b82f6');
+  ctx.strokeStyle=grad;
+  let started=false;
+  buckets.forEach((b,i)=>{
+    if(b.avg===null) return;
+    const x=padL+i*stepX;
+    const y=padT+gH-(b.avg/5)*gH;
+    if(!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+
+  // Dots
+  buckets.forEach((b,i)=>{
+    if(b.avg===null) return;
+    const x=padL+i*stepX;
+    const y=padT+gH-(b.avg/5)*gH;
+    const topMood=b.moods.length?b.moods.sort((a,c)=>(MOOD_SCORE[c]||0)-(MOOD_SCORE[a]||0))[0]:null;
+    ctx.beginPath();
+    ctx.arc(x,y,5,0,Math.PI*2);
+    ctx.fillStyle=topMood?MOOD_COLOR[topMood]:'#7c3aed';
+    ctx.fill();
+    ctx.strokeStyle='#0f0f13'; ctx.lineWidth=1.5;
+    ctx.stroke();
+  });
+
+  // X labels
+  ctx.fillStyle='#6b6b80'; ctx.font=`${Math.max(9,10)}px -apple-system,sans-serif`;
+  ctx.textAlign='center';
+  buckets.forEach((b,i)=>{
+    if(i%(Math.ceil(chartDays/7))!==0&&i!==chartDays-1) return;
+    const x=padL+i*stepX;
+    ctx.fillText(b.label,x,H-4);
+  });
+
+  // Legend
+  const moodsUsed=[...new Set(buckets.flatMap(b=>b.moods))];
+  document.getElementById('chart-legend').innerHTML=moodsUsed.map(m=>`
+    <div class="legend-item">
+      <div class="legend-dot" style="background:${MOOD_COLOR[m]||'#7c3aed'}"></div>
+      ${EMOJI[m]||''} ${m}
+    </div>`).join('');
+}
+
+// ── Render entries ────────────────────────────────────────────────────────────
+function entryInsightHTML(insight,entryId,reply){
+  if(!insight) return '';
+  const replySection=reply
+    ?`<div class="reply-saved-text">✍️ ${reply}</div>`
+    :`<div class="reflection-reply" id="reply-area-${entryId}">
+        <button class="reply-toggle-btn" onclick="toggleReplyBox(${entryId},this)">
+          <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+          Write your reflection
+        </button>
+        <div class="reply-box" id="reply-box-${entryId}">
+          <textarea class="reply-textarea" id="reply-text-${entryId}" placeholder="What comes up for you when you sit with this question?"></textarea>
+          <button class="reply-save-btn" onclick="submitReply(${entryId})">Save Reflection</button>
+        </div>
+      </div>`;
+  return`<div class="entry-insight">
+    <div class="insight-block">
+      <span class="insight-tag empathy">💜 Empathy</span>
+      <div class="insight-text">${insight.empathy}</div>
+    </div>
+    <div class="insight-block">
+      <span class="insight-tag observation">💡 Observation</span>
+      <div class="insight-text">${insight.observation}</div>
+    </div>
+    <div class="insight-block">
+      <span class="insight-tag nudge">🌱 Reflection</span>
+      <div class="insight-text">${insight.nudge}</div>
+      ${replySection}
+    </div>
+  </div>`;
+}
+
+function renderEntries(){
+  const filtered=getFilteredEntries();
+  if(!filtered.length){
+    entriesList.innerHTML=entries.length
+      ?'<div class="empty-state">No entries match your search 🔍</div>'
+      :'<div class="empty-state">No entries yet. Record your first thought 🌱</div>';
+    return;
+  }
+  entriesList.innerHTML=filtered.map(e=>{
+    const displayText=highlightText(e.text,searchQuery);
+    return`<div class="entry" data-id="${e.id}">
+      <div class="entry-header">
+        <span class="entry-meta">${e.date}</span>
+        <div class="entry-header-right">
+          <span class="entry-mood">${e.mood?(EMOJI[e.mood]||'')+' '+e.mood:''}</span>
+          <button class="delete-btn" title="Delete" onclick="showDeleteConfirm(${e.id},this)">
+            <svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6" stroke="#f87171" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="entry-text">${displayText}</div>
+      ${entryInsightHTML(e.insight,e.id,e.reply)}
+      ${e.audioData?`
+        <div class="entry-player">
+          <button class="ep-btn" data-id="${e.id}">
+            <svg class="ep-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="ep-pause" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <div class="ep-track" data-id="${e.id}"><div class="ep-fill" id="epf-${e.id}"></div></div>
+          <span class="ep-time" id="ept-${e.id}">0:00</span>
+        </div>`:''}
+      <div class="delete-confirm" id="del-confirm-${e.id}">
+        <span>Delete this entry? This can't be undone.</span>
+        <button class="confirm-no" onclick="hideDeleteConfirm(${e.id})">Cancel</button>
+        <button class="confirm-yes" onclick="deleteEntry(${e.id})">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  entriesList.querySelectorAll('.ep-btn').forEach(btn=>
+    btn.addEventListener('click',()=>toggleEntry(btn.dataset.id)));
+  entriesList.querySelectorAll('.ep-track').forEach(t=>
+    t.addEventListener('click',ev=>seekEntry(t.dataset.id,ev,t)));
+}
+
+window.toggleReplyBox=function(id,btn){
+  btn.classList.toggle('open');
+  document.getElementById('reply-box-'+id)?.classList.toggle('open');
+};
+window.submitReply=function(id){
+  const t=document.getElementById('reply-text-'+id)?.value.trim();
+  if(!t) return; saveReply(id,t);
+};
+
+// ── Entry audio ───────────────────────────────────────────────────────────────
+function toggleEntry(id){
+  const entry=entries.find(e=>String(e.id)===String(id));
+  if(!entry?.audioData) return;
+  Object.entries(entryAudios).forEach(([eid,a])=>{
+    if(String(eid)!==String(id)&&!a.paused){ a.pause(); setEP(eid,false); }
+  });
+  if(!entryAudios[id]){
+    const a=new Audio(entry.audioData);
+    a.ontimeupdate=()=>{
+      const pct=a.duration?(a.currentTime/a.duration)*100:0;
+      const f=document.getElementById('epf-'+id);
+      const t=document.getElementById('ept-'+id);
+      if(f) f.style.width=pct+'%';
+      if(t) t.textContent=fmt(a.currentTime)+' / '+fmt(a.duration||0);
+    };
+    a.onended=()=>{ setEP(id,false); const f=document.getElementById('epf-'+id); if(f)f.style.width='0%'; };
+    entryAudios[id]=a;
+  }
+  const a=entryAudios[id];
+  a.paused?(a.play(),setEP(id,true)):(a.pause(),setEP(id,false));
+}
+function setEP(id,p){
+  const btn=entriesList.querySelector(`.ep-btn[data-id="${id}"]`);
+  if(!btn) return;
+  btn.querySelector('.ep-play').style.display=p?'none':'block';
+  btn.querySelector('.ep-pause').style.display=p?'block':'none';
+}
+function seekEntry(id,ev,track){
+  const a=entryAudios[id];
+  if(!a?.duration) return;
+  const r=track.getBoundingClientRect();
+  a.currentTime=((ev.clientX-r.left)/r.width)*a.duration;
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+window.showDeleteConfirm=function(id){
+  document.querySelectorAll('.delete-confirm.visible').forEach(el=>{
+    if(el.id!=='del-confirm-'+id) el.classList.remove('visible');
+  });
+  document.getElementById('del-confirm-'+id)?.classList.toggle('visible');
+};
+window.hideDeleteConfirm=function(id){
+  document.getElementById('del-confirm-'+id)?.classList.remove('visible');
+};
+window.deleteEntry=function(id){
+  const el=entriesList.querySelector(`.entry[data-id="${id}"]`);
+  if(el){
+    el.classList.add('deleting');
+    setTimeout(()=>{
+      entries=entries.filter(e=>e.id!==id);
+      if(entryAudios[id]){ entryAudios[id].pause(); delete entryAudios[id]; }
+      localStorage.setItem('vj_entries',JSON.stringify(entries));
+      renderEntries(); updateStats(); drawChart();
+    },280);
+  }
+};
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+updateStats();
+drawChart();
+renderEntries();
+window.addEventListener('resize',drawChart);
+</script>
+</body>
+</html>
