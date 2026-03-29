@@ -69,6 +69,13 @@ header{
   padding:8px 14px;border-radius:8px;border:none;
   background:var(--purple);color:white;font-size:0.82rem;font-weight:600;cursor:pointer;
 }
+.settings-btn{
+  background:none;border:none;cursor:pointer;padding:4px;margin-left:6px;
+  opacity:0.4;transition:opacity 0.15s;touch-action:manipulation;
+  display:inline-flex;align-items:center;
+}
+.settings-btn:hover,.settings-btn:active{opacity:1}
+.settings-btn svg{width:15px;height:15px;fill:none;stroke:var(--muted);stroke-width:2}
 
 /* ── Cards ── */
 .card{
@@ -273,14 +280,33 @@ header{
 .export-btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2}
 
 /* ── Past entries ── */
-.entry{border-bottom:1px solid #1e1e2a;padding:14px 0;transition:opacity 0.3s}
-.entry:last-child{border-bottom:none}
+.entry{
+  padding:16px;margin-bottom:10px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:14px;
+  transition:opacity 0.3s;
+  position:relative;
+}
+.entry:last-child{margin-bottom:0}
 .entry.deleting{opacity:0}
-.entry-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px}
-.entry-meta{font-size:0.72rem;color:var(--muted);line-height:1.4}
-.entry-mood{font-size:0.85rem;color:var(--muted);flex-shrink:0}
-.entry-text{font-size:0.86rem;color:#a0a0b8;line-height:1.55}
-.entry-insight{margin-top:10px}
+.entry-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:8px}
+.entry-date-block{display:flex;flex-direction:column;gap:2px}
+.entry-date{
+  font-size:0.78rem;font-weight:700;color:var(--purple-light);
+  letter-spacing:0.3px;
+}
+.entry-time{font-size:0.7rem;color:var(--muted)}
+.entry-divider{
+  height:1px;background:linear-gradient(90deg,var(--border),transparent);
+  margin-bottom:10px;
+}
+.entry-mood{font-size:0.82rem;color:var(--muted);flex-shrink:0;
+  background:var(--card);border:1px solid var(--border);
+  border-radius:20px;padding:3px 9px;font-size:0.72rem;
+}
+.entry-text{font-size:0.88rem;color:#b0b0c8;line-height:1.6}
+.entry-insight{margin-top:12px}
 .entry-header-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .delete-btn{
   background:none;border:none;cursor:pointer;
@@ -344,6 +370,9 @@ header{
 </head>
 <body>
 
+<!-- Hidden shared audio element — required for iOS autoplay policy -->
+<audio id="shared-audio" preload="none" style="display:none"></audio>
+
 <!-- Header -->
 <header>
   <div class="header-title">
@@ -352,7 +381,12 @@ header{
   </div>
   <div class="header-stats">
     <div class="streak-badge" id="streak-badge">🔥 0 day streak</div>
-    <div class="entry-count" id="entry-count">0 entries</div>
+    <div style="display:flex;align-items:center;justify-content:flex-end">
+      <div class="entry-count" id="entry-count">0 entries</div>
+      <button class="settings-btn" id="settings-btn" title="API Key settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
   </div>
 </header>
 
@@ -486,18 +520,50 @@ document.getElementById('install-btn').addEventListener('click', async()=>{
   deferredInstall=null;
 });
 
-// ── API Key ───────────────────────────────────────────────────────────────────
+// ── API Key — robust persistence ─────────────────────────────────────────────
 const apiBanner   = document.getElementById('api-banner');
 const apiKeyInput = document.getElementById('api-key-input');
-function getApiKey(){ return localStorage.getItem('vj_api_key')||''; }
-function checkApiBanner(){ apiBanner.classList.toggle('visible',!getApiKey()); }
+// Store in BOTH localStorage and a cookie so PWA/iOS can always find it
+const KEY_NAME = 'vj_api_key';
+
+function saveApiKey(k){
+  try{ localStorage.setItem(KEY_NAME, k); }catch(e){}
+  // Also set a cookie valid 1 year as belt-and-suspenders for iOS PWA
+  const exp = new Date(); exp.setFullYear(exp.getFullYear()+1);
+  document.cookie = `${KEY_NAME}=${encodeURIComponent(k)};expires=${exp.toUTCString()};path=/;SameSite=Strict`;
+}
+
+function getApiKey(){
+  // Try localStorage first
+  try{
+    const ls = localStorage.getItem(KEY_NAME);
+    if(ls) return ls;
+  }catch(e){}
+  // Fall back to cookie
+  const match = document.cookie.match(new RegExp('(?:^|; )'+KEY_NAME+'=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+function checkApiBanner(){ apiBanner.classList.toggle('visible', !getApiKey()); }
+
 document.getElementById('api-key-save').addEventListener('click',()=>{
-  const k=apiKeyInput.value.trim();
+  const k = apiKeyInput.value.trim();
   if(!k.startsWith('sk-')){ alert('Key should start with sk-ant-…'); return; }
-  localStorage.setItem('vj_api_key',k);
+  saveApiKey(k);
   apiKeyInput.value='';
   checkApiBanner();
 });
+
+// Settings gear — re-show the banner to update key
+document.getElementById('settings-btn').addEventListener('click',()=>{
+  apiBanner.classList.toggle('visible');
+  if(apiBanner.classList.contains('visible')){
+    apiBanner.querySelector('p').textContent = getApiKey()
+      ? 'Your API key is saved. Paste a new one below to replace it.'
+      : 'Paste your Anthropic API key to enable AI insights.';
+  }
+});
+
 checkApiBanner();
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -510,7 +576,7 @@ let audioChunks   = [];
 let audioBlob     = null;
 let audioURL      = null;
 let audioEl       = null;
-let entryAudios   = {};
+let entryAudios   = {}; // kept for compatibility, replaced by sharedAudio
 let searchQuery   = '';
 let filterMood    = '';
 let chartDays     = 7;
@@ -615,9 +681,12 @@ function doStopRecording(){
   }
 }
 
-// ── Playback ──────────────────────────────────────────────────────────────────
+// ── Playback (current session recording) ─────────────────────────────────────
 function initPlayback(url){
-  audioEl=new Audio(url); playbackWrap.classList.add('visible'); setPlayState(false);
+  // Pause any entry currently playing
+  if(currentPlayingId){ sharedAudio.pause(); setEP(currentPlayingId,false); currentPlayingId=null; }
+  audioEl = new Audio(url);
+  playbackWrap.classList.add('visible'); setPlayState(false);
   audioEl.ontimeupdate=()=>{
     const pct=audioEl.duration?(audioEl.currentTime/audioEl.duration)*100:0;
     progFill.style.width=pct+'%';
@@ -1030,16 +1099,23 @@ function renderEntries(){
   }
   entriesList.innerHTML=filtered.map(e=>{
     const displayText=highlightText(e.text,searchQuery);
+    const d = new Date(e.date);
+    const datePart = isNaN(d) ? e.date : d.toLocaleDateString('en',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+    const timePart = isNaN(d) ? '' : d.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'});
     return`<div class="entry" data-id="${e.id}">
       <div class="entry-header">
-        <span class="entry-meta">${e.date}</span>
+        <div class="entry-date-block">
+          <span class="entry-date">${datePart}</span>
+          ${timePart?`<span class="entry-time">${timePart}</span>`:''}
+        </div>
         <div class="entry-header-right">
-          <span class="entry-mood">${e.mood?(EMOJI[e.mood]||'')+' '+e.mood:''}</span>
+          ${e.mood?`<span class="entry-mood">${EMOJI[e.mood]||''} ${e.mood}</span>`:''}
           <button class="delete-btn" title="Delete" onclick="showDeleteConfirm(${e.id},this)">
             <svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6" stroke="#f87171" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
           </button>
         </div>
       </div>
+      <div class="entry-divider"></div>
       <div class="entry-text">${displayText}</div>
       ${entryInsightHTML(e.insight,e.id,e.reply)}
       ${e.audioData?`
@@ -1074,27 +1150,58 @@ window.submitReply=function(id){
   if(!t) return; saveReply(id,t);
 };
 
-// ── Entry audio ───────────────────────────────────────────────────────────────
+// ── Entry audio — iOS-compatible shared player ────────────────────────────────
+// iOS requires audio elements to exist in DOM and be triggered by user tap.
+// We use a single shared <audio id="shared-audio"> element.
+const sharedAudio = document.getElementById('shared-audio');
+let currentPlayingId = null;
+
 function toggleEntry(id){
-  const entry=entries.find(e=>String(e.id)===String(id));
+  const entry = entries.find(e=>String(e.id)===String(id));
   if(!entry?.audioData) return;
-  Object.entries(entryAudios).forEach(([eid,a])=>{
-    if(String(eid)!==String(id)&&!a.paused){ a.pause(); setEP(eid,false); }
-  });
-  if(!entryAudios[id]){
-    const a=new Audio(entry.audioData);
-    a.ontimeupdate=()=>{
-      const pct=a.duration?(a.currentTime/a.duration)*100:0;
-      const f=document.getElementById('epf-'+id);
-      const t=document.getElementById('ept-'+id);
-      if(f) f.style.width=pct+'%';
-      if(t) t.textContent=fmt(a.currentTime)+' / '+fmt(a.duration||0);
-    };
-    a.onended=()=>{ setEP(id,false); const f=document.getElementById('epf-'+id); if(f)f.style.width='0%'; };
-    entryAudios[id]=a;
+
+  // If tapping the currently playing entry — pause it
+  if(currentPlayingId===id && !sharedAudio.paused){
+    sharedAudio.pause();
+    setEP(id, false);
+    return;
   }
-  const a=entryAudios[id];
-  a.paused?(a.play(),setEP(id,true)):(a.pause(),setEP(id,false));
+
+  // Pause any currently playing entry
+  if(currentPlayingId && currentPlayingId!==id){
+    sharedAudio.pause();
+    setEP(currentPlayingId, false);
+  }
+
+  // Load new source only if switching entries
+  if(currentPlayingId!==id){
+    sharedAudio.src = entry.audioData;
+    currentPlayingId = id;
+  }
+
+  sharedAudio.ontimeupdate = ()=>{
+    const pct = sharedAudio.duration?(sharedAudio.currentTime/sharedAudio.duration)*100:0;
+    const f = document.getElementById('epf-'+id);
+    const t = document.getElementById('ept-'+id);
+    if(f) f.style.width = pct+'%';
+    if(t) t.textContent = fmt(sharedAudio.currentTime)+' / '+fmt(sharedAudio.duration||0);
+  };
+  sharedAudio.onended = ()=>{
+    setEP(id, false);
+    const f = document.getElementById('epf-'+id);
+    if(f) f.style.width='0%';
+    currentPlayingId = null;
+  };
+
+  const playPromise = sharedAudio.play();
+  if(playPromise !== undefined){
+    playPromise.then(()=> setEP(id, true)).catch(err=>{
+      console.warn('Playback blocked:', err);
+      setEP(id, false);
+    });
+  } else {
+    setEP(id, true);
+  }
 }
 function setEP(id,p){
   const btn=entriesList.querySelector(`.ep-btn[data-id="${id}"]`);
@@ -1124,8 +1231,9 @@ window.deleteEntry=function(id){
   if(el){
     el.classList.add('deleting');
     setTimeout(()=>{
+      // Stop shared audio if this entry was playing
+      if(String(currentPlayingId)===String(id)){ sharedAudio.pause(); currentPlayingId=null; }
       entries=entries.filter(e=>e.id!==id);
-      if(entryAudios[id]){ entryAudios[id].pause(); delete entryAudios[id]; }
       localStorage.setItem('vj_entries',JSON.stringify(entries));
       renderEntries(); updateStats(); drawChart();
     },280);
