@@ -520,47 +520,47 @@ document.getElementById('install-btn').addEventListener('click', async()=>{
   deferredInstall=null;
 });
 
-// ── API Key — robust persistence ─────────────────────────────────────────────
+// ── API Key ───────────────────────────────────────────────────────────────────
 const apiBanner   = document.getElementById('api-banner');
 const apiKeyInput = document.getElementById('api-key-input');
-// Store in BOTH localStorage and a cookie so PWA/iOS can always find it
-const KEY_NAME = 'vj_api_key';
+const KEY_NAME    = 'vj_api_key';
 
 function saveApiKey(k){
-  try{ localStorage.setItem(KEY_NAME, k); }catch(e){}
-  // Also set a cookie valid 1 year as belt-and-suspenders for iOS PWA
-  const exp = new Date(); exp.setFullYear(exp.getFullYear()+1);
-  document.cookie = `${KEY_NAME}=${encodeURIComponent(k)};expires=${exp.toUTCString()};path=/;SameSite=Strict`;
+  try{ localStorage.setItem(KEY_NAME, k); }catch(e){ console.error('localStorage save failed',e); }
 }
-
 function getApiKey(){
-  // Try localStorage first
-  try{
-    const ls = localStorage.getItem(KEY_NAME);
-    if(ls) return ls;
-  }catch(e){}
-  // Fall back to cookie
-  const match = document.cookie.match(new RegExp('(?:^|; )'+KEY_NAME+'=([^;]*)'));
-  return match ? decodeURIComponent(match[1]) : '';
+  try{ return localStorage.getItem(KEY_NAME)||''; }catch(e){ return ''; }
 }
-
-function checkApiBanner(){ apiBanner.classList.toggle('visible', !getApiKey()); }
+function checkApiBanner(){
+  const hasKey = !!getApiKey();
+  // Only show banner automatically if no key at all
+  apiBanner.classList.toggle('visible', !hasKey);
+}
 
 document.getElementById('api-key-save').addEventListener('click',()=>{
   const k = apiKeyInput.value.trim();
   if(!k.startsWith('sk-')){ alert('Key should start with sk-ant-…'); return; }
   saveApiKey(k);
-  apiKeyInput.value='';
-  checkApiBanner();
+  apiKeyInput.value = '';
+  // Confirm saved and hide
+  apiBanner.querySelector('p').textContent = '✓ API key saved successfully!';
+  setTimeout(()=>{
+    apiBanner.classList.remove('visible');
+    apiBanner.querySelector('p').textContent = 'Paste your Anthropic API key to enable AI insights. Stored only in your browser.';
+  }, 1500);
 });
 
-// Settings gear — re-show the banner to update key
+// Gear icon: show status — never wipes the key, just lets user update it
 document.getElementById('settings-btn').addEventListener('click',()=>{
-  apiBanner.classList.toggle('visible');
+  const hasKey = !!getApiKey();
   if(apiBanner.classList.contains('visible')){
-    apiBanner.querySelector('p').textContent = getApiKey()
-      ? 'Your API key is saved. Paste a new one below to replace it.'
-      : 'Paste your Anthropic API key to enable AI insights.';
+    // Already open — close it
+    apiBanner.classList.remove('visible');
+  } else {
+    apiBanner.querySelector('p').textContent = hasKey
+      ? '✓ API key is saved. Paste a new one below to replace it.'
+      : 'Paste your Anthropic API key to enable AI insights. Stored only in your browser.';
+    apiBanner.classList.add('visible');
   }
 });
 
@@ -569,6 +569,8 @@ checkApiBanner();
 // ── State ─────────────────────────────────────────────────────────────────────
 let selectedMood  = null;
 let entries       = JSON.parse(localStorage.getItem('vj_entries')||'[]');
+// Strip any legacy audioData that was accidentally left in localStorage entries
+entries.forEach(e=>{ if(e.audioData && e.audioData.length > 500){ delete e.audioData; } });
 let isRecording   = false;
 let recognition   = null;
 let mediaRecorder = null;
@@ -576,10 +578,80 @@ let audioChunks   = [];
 let audioBlob     = null;
 let audioURL      = null;
 let audioEl       = null;
-let entryAudios   = {}; // kept for compatibility, replaced by sharedAudio
+let entryAudios   = {};
 let searchQuery   = '';
 let filterMood    = '';
 let chartDays     = 7;
+
+// ── IndexedDB for audio storage ───────────────────────────────────────────────
+// Audio blobs are stored in IndexedDB (no size limit) not localStorage (5MB limit)
+const DB_NAME    = 'vjournal_audio';
+const DB_VERSION = 1;
+const STORE_NAME = 'recordings';
+let db = null;
+
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      e.target.result.createObjectStore(STORE_NAME, {keyPath:'id'});
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror   = e => { console.warn('IndexedDB unavailable:', e); resolve(null); };
+  });
+}
+
+async function saveAudioToDB(entryId, blob){
+  if(!db || !blob) return;
+  return new Promise((resolve)=>{
+    const tx  = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put({id: String(entryId), blob});
+    tx.oncomplete = ()=> resolve(true);
+    tx.onerror    = ()=> resolve(false);
+  });
+}
+
+async function loadAudioFromDB(entryId){
+  if(!db) return null;
+  return new Promise((resolve)=>{
+    const tx  = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(String(entryId));
+    req.onsuccess = ()=> resolve(req.result?.blob || null);
+    req.onerror   = ()=> resolve(null);
+  });
+}
+
+async function deleteAudioFromDB(entryId){
+  if(!db) return;
+  return new Promise((resolve)=>{
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(String(entryId));
+    tx.oncomplete = ()=> resolve();
+    tx.onerror    = ()=> resolve();
+  });
+}
+
+// Migrate any existing base64 audio from localStorage → IndexedDB then strip it
+async function migrateAudio(){
+  const stored = JSON.parse(localStorage.getItem('vj_entries')||'[]');
+  let changed = false;
+  for(const e of stored){
+    if(e.audioData && e.audioData.startsWith('data:')){
+      try{
+        const res  = await fetch(e.audioData);
+        const blob = await res.blob();
+        await saveAudioToDB(e.id, blob);
+        e.hasAudio = true;
+        delete e.audioData;
+        changed = true;
+      }catch(err){ console.warn('Migration failed for', e.id, err); }
+    }
+  }
+  if(changed){
+    localStorage.setItem('vj_entries', JSON.stringify(stored));
+    entries = stored;
+  }
+}
 
 // ── DOM ───────────────────────────────────────────────────────────────────────
 const micBtn        = document.getElementById('mic-btn');
@@ -710,11 +782,6 @@ function fmt(s){ if(!s||isNaN(s))return'0:00'; return`${Math.floor(s/60)}:${Stri
 transcriptBox.addEventListener('input',updateCharHint);
 function updateCharHint(){ charHint.textContent=transcriptBox.value.length?`${transcriptBox.value.length} characters`:''; }
 
-// ── Blob → base64 ─────────────────────────────────────────────────────────────
-function blobToDataURL(blob){
-  return new Promise(res=>{ const r=new FileReader(); r.onloadend=()=>res(r.result); r.readAsDataURL(blob); });
-}
-
 // ── AI Insight ────────────────────────────────────────────────────────────────
 async function generateInsight(text,mood){
   const apiKey=getApiKey();
@@ -799,8 +866,8 @@ saveBtn.addEventListener('click',async()=>{
   saveStatus.textContent=''; saveStatus.className='';
   if(wantInsight){ summaryArea.className='empty'; summaryArea.textContent='Generating your reflection…'; }
 
-  // Step 1: encode audio immediately (never blocks save)
-  const audioPromise = audioBlob ? blobToDataURL(audioBlob) : Promise.resolve(null);
+  // Step 1: start AI insight — audio saves to IndexedDB separately below
+  const entryId = Date.now();
 
   // Step 2: run AI insight — failure here must NOT prevent saving
   let insightResult = null;
@@ -816,18 +883,22 @@ saveBtn.addEventListener('click',async()=>{
     }
   }
 
-  // Step 3: await audio (runs in parallel, should be ready by now)
-  let audioData = null;
-  try{ audioData = await audioPromise; }
-  catch(audioErr){ console.warn('Audio encode failed (non-fatal):', audioErr); }
+  // Step 3: save audio to IndexedDB (no size limit) — separate from entry metadata
+  let hasAudio = false;
+  if(audioBlob){
+    try{
+      hasAudio = !!(await saveAudioToDB(entryId, audioBlob));
+    }catch(audioErr){ console.warn('Audio DB save failed (non-fatal):', audioErr); }
+  }
 
-  // Step 4: ALWAYS save the entry
+  // Step 4: ALWAYS save entry metadata to localStorage (no audio blob — stays tiny)
   try{
     const entry={
-      id:Date.now(), date:new Date().toLocaleString(),
+      id: entryId, date:new Date().toLocaleString(),
       mood:selectedMood, text,
       insight:insightResult&&!insightResult.error?insightResult:null,
-      audioData, reply:null
+      hasAudio,
+      reply:null
     };
     entries.unshift(entry);
     localStorage.setItem('vj_entries', JSON.stringify(entries));
@@ -1118,7 +1189,7 @@ function renderEntries(){
       <div class="entry-divider"></div>
       <div class="entry-text">${displayText}</div>
       ${entryInsightHTML(e.insight,e.id,e.reply)}
-      ${e.audioData?`
+      ${(e.hasAudio||e.audioData)?`
         <div class="entry-player">
           <button class="ep-btn" data-id="${e.id}">
             <svg class="ep-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -1151,31 +1222,39 @@ window.submitReply=function(id){
 };
 
 // ── Entry audio — iOS-compatible shared player ────────────────────────────────
-// iOS requires audio elements to exist in DOM and be triggered by user tap.
-// We use a single shared <audio id="shared-audio"> element.
 const sharedAudio = document.getElementById('shared-audio');
 let currentPlayingId = null;
 
-function toggleEntry(id){
+async function toggleEntry(id){
   const entry = entries.find(e=>String(e.id)===String(id));
-  if(!entry?.audioData) return;
+  if(!entry?.hasAudio && !entry?.audioData) return;
 
-  // If tapping the currently playing entry — pause it
+  // Pause if already playing this entry
   if(currentPlayingId===id && !sharedAudio.paused){
     sharedAudio.pause();
     setEP(id, false);
     return;
   }
 
-  // Pause any currently playing entry
+  // Pause any other entry
   if(currentPlayingId && currentPlayingId!==id){
     sharedAudio.pause();
     setEP(currentPlayingId, false);
   }
 
-  // Load new source only if switching entries
+  // Load audio source
   if(currentPlayingId!==id){
-    sharedAudio.src = entry.audioData;
+    let src = null;
+    // Try IndexedDB first (new storage)
+    if(db){
+      const blob = await loadAudioFromDB(id);
+      if(blob) src = URL.createObjectURL(blob);
+    }
+    // Fall back to legacy base64 audioData if present
+    if(!src && entry.audioData) src = entry.audioData;
+
+    if(!src){ console.warn('No audio found for entry', id); return; }
+    sharedAudio.src = src;
     currentPlayingId = id;
   }
 
@@ -1199,9 +1278,7 @@ function toggleEntry(id){
       console.warn('Playback blocked:', err);
       setEP(id, false);
     });
-  } else {
-    setEP(id, true);
-  }
+  } else { setEP(id, true); }
 }
 function setEP(id,p){
   const btn=entriesList.querySelector(`.ep-btn[data-id="${id}"]`);
@@ -1230,9 +1307,9 @@ window.deleteEntry=function(id){
   const el=entriesList.querySelector(`.entry[data-id="${id}"]`);
   if(el){
     el.classList.add('deleting');
-    setTimeout(()=>{
-      // Stop shared audio if this entry was playing
+    setTimeout(async ()=>{
       if(String(currentPlayingId)===String(id)){ sharedAudio.pause(); currentPlayingId=null; }
+      await deleteAudioFromDB(id);
       entries=entries.filter(e=>e.id!==id);
       localStorage.setItem('vj_entries',JSON.stringify(entries));
       renderEntries(); updateStats(); drawChart();
@@ -1241,9 +1318,13 @@ window.deleteEntry=function(id){
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-updateStats();
-drawChart();
-renderEntries();
+openDB().then(async ()=>{
+  await migrateAudio(); // move any old base64 audio out of localStorage
+  entries = JSON.parse(localStorage.getItem('vj_entries')||'[]');
+  updateStats();
+  drawChart();
+  renderEntries();
+});
 window.addEventListener('resize',drawChart);
 </script>
 </body>
